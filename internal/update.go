@@ -1,10 +1,17 @@
 package internal
 
 import (
+	"fmt"
+	"log"
+	"net/textproto"
+	"os"
+	"os/exec"
+	"strings"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/jordan-wright/email"
 	"github.com/rymdport/portal/filechooser"
-	"log"
 )
 
 func (m Model) Init() tea.Cmd {
@@ -13,6 +20,10 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case error:
+		// TODO: show this on the bottom for some time, see ansicht
+		panic(msg)
+
 	case tea.WindowSizeMsg:
 		m.setDimensions(msg.Width, msg.Height)
 
@@ -20,6 +31,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cmd := m.handleKeyMessage(msg); cmd != nil {
 			return m, cmd
 		}
+
+	case UpdateEmail:
+		m.email.From = msg.From
+		m.email.To = msg.To
+		m.email.Cc = msg.Cc
+		m.email.Bcc = msg.Bcc
+		m.email.Subject = msg.Subject
+		m.email.Headers = msg.Headers
+		m.email.Text = msg.Text
+		m.bodyViewport.SetContent(string(m.email.Text))
+		return m, nil
 	}
 
 	m.bodyViewport.Update(msg)
@@ -30,11 +52,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKeyMessage(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case key.Matches(msg, m.keys.Edit):
-		// TODO: yield to editor
-		return nil
+		return m.editEmail()
 
 	case key.Matches(msg, m.keys.Attach):
 		m.attachFile()
+		// TODO event based on outcome of election
 		return nil
 
 	case key.Matches(msg, m.keys.Send):
@@ -62,4 +84,97 @@ func (m *Model) attachFile() {
 	for _, filename := range files {
 		m.email.AttachFile(strings.TrimPrefix(filename, "file://"))
 	}
+}
+
+func (m *Model) editEmail() tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "nano"
+	}
+
+	tempFile, err := os.CreateTemp("", "absicht-email-*.eml")
+	if err != nil {
+		return func() tea.Msg { return fmt.Errorf("failed to create temp file: %w", err) }
+	}
+
+	err = writeEmailToFile(tempFile, m.email)
+	tempFile.Close()
+	if err != nil {
+		os.Remove(tempFile.Name())
+		return func() tea.Msg { return fmt.Errorf("cannot write temp file: %w", err) }
+	}
+
+	cmd := exec.Command(editor, tempFile.Name())
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		defer os.Remove(tempFile.Name())
+		if err != nil {
+			return err
+		}
+
+		editedFile, err := os.Open(tempFile.Name())
+		if err != nil {
+			return fmt.Errorf("cannot open edited file: %w", err)
+		}
+
+		editedEmail, err := email.NewEmailFromReader(editedFile)
+		if err != nil {
+			return fmt.Errorf("cannot parses edited email: %w", err)
+		}
+
+		return UpdateEmail{
+			From:    editedEmail.From,
+			To:      editedEmail.To,
+			Cc:      editedEmail.Cc,
+			Bcc:     editedEmail.Bcc,
+			Subject: editedEmail.Subject,
+			Headers: editedEmail.Headers,
+			Text:    editedEmail.Text,
+		}
+
+	})
+}
+
+func writeEmailToFile(file *os.File, email *email.Email) (err error) {
+	canonicalHeaders := []struct{ key, value string }{
+		{"From", email.From},
+		{"To", strings.Join(email.To, ", ")},
+		{"Cc", strings.Join(email.Cc, ", ")},
+		{"Bcc", strings.Join(email.Bcc, ", ")},
+		{"Subject", email.Subject},
+	}
+	for _, h := range canonicalHeaders {
+		_, err = fmt.Fprintf(file, "%s: %s\n", h.key, h.value)
+		if err != nil {
+			return err
+		}
+	}
+
+	for key, values := range email.Headers {
+		switch key {
+		case "Content-Type", "Content-Transfer-Encoding", "Mime-Version", "Message-Id":
+			// skip header
+
+		default:
+			for _, v := range values {
+				_, err = fmt.Fprintf(file, "%s: %s\n", key, v)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	text := strings.ReplaceAll(string(email.Text), "\r\n", "\n")
+	_, err = fmt.Fprintf(file, "\n%s\n", strings.Trim(text, "\n"))
+	return err
+}
+
+type UpdateEmail struct {
+	From    string
+	To      []string
+	Cc      []string
+	Bcc     []string
+	Subject string
+	Headers textproto.MIMEHeader
+	Text    []byte
 }

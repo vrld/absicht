@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vrld/absicht/internal"
 )

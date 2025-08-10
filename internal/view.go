@@ -19,7 +19,7 @@ func (m Model) View() string {
 
 var borderColor = lipgloss.Color("4")
 
-func (m Model) renderHeaders() string {
+func (m *Model) renderHeaders() string {
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
@@ -31,20 +31,32 @@ func (m Model) renderHeaders() string {
 		fmt.Sprint("To: ", strings.Join(m.email.To, ", ")),
 	}
 
-	if m.email.Cc != nil {
-		lines = append(lines, fmt.Sprint("Cc: ", strings.Join(m.email.Cc, ", ")))
+	if cc := strings.Join(m.email.Cc, ", "); cc != "" {
+		lines = append(lines, fmt.Sprint("Cc: ", cc))
 	}
 
-	if m.email.Bcc != nil {
-		lines = append(lines, fmt.Sprint("Bcc: ", strings.Join(m.email.Bcc, ", ")))
+	if bcc := strings.Join(m.email.Bcc, ", "); bcc != "" {
+		lines = append(lines, fmt.Sprint("Bcc: ", bcc))
 	}
 
 	lines = append(lines, fmt.Sprint("Subject: ", m.email.Subject))
 
+	for key, values := range m.email.Headers {
+		switch key {
+		case "Content-Type", "Content-Transfer-Encoding", "Mime-Version", "Message-Id":
+			// skip header
+
+		default:
+			for _, v := range values {
+				lines = append(lines, fmt.Sprintf("%s: %s", key, v))
+			}
+		}
+	}
+
 	return style.Render(strings.Join(lines, "\n"))
 }
 
-func (m Model) renderAttachments() string {
+func (m *Model) renderAttachments() string {
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder(), false, true, true, true).
 		BorderForeground(borderColor).
@@ -59,7 +71,7 @@ func (m Model) renderAttachments() string {
 	return style.Render(strings.Join(lines, "\n"))
 }
 
-func (m Model) renderBody(height int) string {
+func (m *Model) renderBody(height int) string {
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder(), false, true, true, true).
 		BorderForeground(borderColor).
