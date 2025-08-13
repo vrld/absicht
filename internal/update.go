@@ -32,6 +32,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+	case EditEmail:
+		return m, m.editEmail()
+
 	case UpdateEmail:
 		m.email.From = msg.From
 		m.email.To = msg.To
@@ -52,12 +55,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKeyMessage(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case key.Matches(msg, m.keys.Edit):
-		return m.editEmail()
+		return func() tea.Msg { return EditEmail{} }
 
 	case key.Matches(msg, m.keys.Attach):
 		m.attachFile()
 		// TODO event based on outcome of election
-		return nil
+		return func() tea.Msg { return "redraw" }
 
 	case key.Matches(msg, m.keys.Send):
 		// TODO: call msmtp and quit
@@ -188,6 +191,9 @@ func writeEmailToFile(file *os.File, email *email.Email) (err error) {
 	_, err = fmt.Fprintf(file, "\n%s\n", strings.Trim(text, "\n"))
 	return err
 }
+
+
+type EditEmail struct {}
 
 type UpdateEmail struct {
 	From    string
