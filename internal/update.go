@@ -63,8 +63,8 @@ func (m *Model) handleKeyMessage(msg tea.KeyMsg) tea.Cmd {
 		// TODO: call msmtp and quit
 		return nil
 
-	case key.Matches(msg, m.keys.Send):
-		// TODO: prompt for name and save
+	case key.Matches(msg, m.keys.Save):
+		m.saveToFile()
 		return nil
 
 	case key.Matches(msg, m.keys.Quit):
@@ -132,6 +132,26 @@ func (m *Model) editEmail() tea.Cmd {
 		}
 
 	})
+}
+
+func (m *Model) saveToFile() {
+	options := filechooser.SaveFileOptions{CurrentName: "mail.eml"}
+	files, err := filechooser.SaveFile("absicht", "Save to file", &options)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	bytes, err := m.email.Bytes()
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	for _, filename := range files {
+    filename = strings.TrimPrefix(filename, "file://")
+		if err := os.WriteFile(filename, bytes, os.ModePerm); err != nil {
+			log.Fatalln(err)
+		}
+	}
 }
 
 func writeEmailToFile(file *os.File, email *email.Email) (err error) {
