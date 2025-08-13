@@ -9,12 +9,19 @@ import (
 
 func (m Model) View() string {
 	cardHeaders := m.renderHeaders()
-	cardAttachments := m.renderAttachments()
+	var cardAttachments string
+	if len(m.email.Attachments) > 0 {
+		cardAttachments = m.renderAttachments() + "\n"
+	}
 
-	bodyHeight := m.height - (2 + lipgloss.Height(cardHeaders) + lipgloss.Height(cardAttachments))
+	attachmentHeight := lipgloss.Height(cardAttachments)
+	if len(m.email.Attachments) == 0 {
+		attachmentHeight = 1  // TODO: figure out why this needs to be 1 instead of 0
+	}
+	bodyHeight := m.height - (1 + lipgloss.Height(cardHeaders) + attachmentHeight)
 	cardBody := m.renderBody(bodyHeight)
-
-	return fmt.Sprintf("%s\n%s\n%s\n%s", cardHeaders, cardBody, cardAttachments, m.help.View(m.keys))
+	// NOTE: cardAttachments already includes the \n if there are attchments
+	return fmt.Sprint(cardHeaders, "\n", cardBody, "\n", cardAttachments, m.help.View(m.keys))
 }
 
 var borderColor = lipgloss.Color("4")
