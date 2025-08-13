@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"io"
+
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -48,24 +50,21 @@ func InitialModel() Model {
 		email: email.NewEmail(),
 	}
 
-	// mock data
-	// TODO: read from email
-	model.email.From = "s@nd.er"
-	model.email.To = []string{"rec@iv.er"}
-	model.email.Bcc = []string{"s@cr.et"}
-	model.email.Subject = "check this out"
-
-	model.email.Text = []byte("This is a test\nThere are lines\nmany lines\nso\nmany\nlines\n\nk, bye\n\n-- \nand a signature")
-
-	model.email.AttachFile("README.md")
-	model.email.AttachFile("main.go")
-	model.email.AttachFile("flake.nix")
-
 	model.setDimensions(1, 1)
 	model.bodyViewport.KeyMap = viewport.DefaultKeyMap()
 	model.bodyViewport.SetContent(string(model.email.Text))
 
 	return model
+}
+
+func (m *Model) ReadEmail(reader io.Reader) error {
+	mail, err := email.NewEmailFromReader(reader)
+	if err != nil {
+		return err
+	}
+	m.email = mail
+	m.bodyViewport.SetContent(string(m.email.Text))
+	return nil
 }
 
 func (m *Model) setDimensions(width, height int) {
