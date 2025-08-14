@@ -43,7 +43,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.email.Subject = msg.Subject
 		m.email.Headers = msg.Headers
 		m.email.Text = msg.Text
-		m.bodyViewport.SetContent(string(m.email.Text))
+		m.UpdateEmailDisplay()
 		return m, nil
 	}
 
@@ -59,7 +59,7 @@ func (m *Model) handleKeyMessage(msg tea.KeyMsg) tea.Cmd {
 
 	case key.Matches(msg, m.keys.Attach):
 		m.attachFile()
-		// TODO event based on outcome of election
+		// TODO event based on outcome of selection
 		return func() tea.Msg { return "redraw" }
 
 	case key.Matches(msg, m.keys.Send):

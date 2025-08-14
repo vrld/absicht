@@ -35,7 +35,6 @@ type Model struct {
 	help          help.Model
 	email         *email.Email
 	bodyViewport  viewport.Model
-	// TODO: viewport for body
 }
 
 func InitialModel() Model {
@@ -52,7 +51,7 @@ func InitialModel() Model {
 
 	model.setDimensions(1, 1)
 	model.bodyViewport.KeyMap = viewport.DefaultKeyMap()
-	model.bodyViewport.SetContent(string(model.email.Text))
+	model.UpdateEmailDisplay()
 
 	return model
 }
@@ -63,8 +62,18 @@ func (m *Model) ReadEmail(reader io.Reader) error {
 		return err
 	}
 	m.email = mail
-	m.bodyViewport.SetContent(string(m.email.Text))
+	m.UpdateEmailDisplay()
 	return nil
+}
+
+func (m *Model) UpdateEmailDisplay() {
+	emailText := string(m.email.Text)
+	rendered, err := RenderMarkdown(m.width, emailText)
+	if err == nil {
+		m.bodyViewport.SetContent(rendered)
+	} else {
+		m.bodyViewport.SetContent(emailText)
+	}
 }
 
 func (m *Model) setDimensions(width, height int) {

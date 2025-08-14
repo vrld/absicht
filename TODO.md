@@ -1,6 +1,6 @@
 # TODO
 
-- add flag `-e` to drop right into editor
 - render markdown as html; send multipart
-- preview markdown
 - bindings to manage attachments
+- send email with msmtp
+- error display
