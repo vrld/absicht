@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net/textproto"
@@ -12,6 +13,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jordan-wright/email"
 	"github.com/rymdport/portal/filechooser"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/renderer/html"
 )
 
 func (m Model) Init() tea.Cmd {
@@ -144,13 +148,18 @@ func (m *Model) saveToFile() {
 		log.Fatalln(err)
 	}
 
+	m.email.HTML, err = markdownToHtml(m.email.Text)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
 	bytes, err := m.email.Bytes()
 	if err != nil {
 		log.Fatalln(err)
 	}
 
 	for _, filename := range files {
-    filename = strings.TrimPrefix(filename, "file://")
+		filename = strings.TrimPrefix(filename, "file://")
 		if err := os.WriteFile(filename, bytes, os.ModePerm); err != nil {
 			log.Fatalln(err)
 		}
@@ -192,8 +201,7 @@ func writeEmailToFile(file *os.File, email *email.Email) (err error) {
 	return err
 }
 
-
-type EditEmail struct {}
+type EditEmail struct{}
 
 type UpdateEmail struct {
 	From    string
@@ -203,4 +211,18 @@ type UpdateEmail struct {
 	Subject string
 	Headers textproto.MIMEHeader
 	Text    []byte
+}
+
+func markdownToHtml(markdown []byte) ([]byte, error) {
+	md := goldmark.New(
+		goldmark.WithExtensions(extension.GFM, extension.Footnote),
+		goldmark.WithRendererOptions(html.WithHardWraps()),
+	)
+
+	var buf bytes.Buffer
+	if err := md.Convert(markdown, &buf); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
