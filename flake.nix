@@ -16,7 +16,7 @@
         src = ./.;
         # vendorHash = null;
         # vendorHash = pkgs.lib.fakeHash;
-        vendorHash = "sha256-AXUk6bTJNolTL6QtBVKU9dTndjvhCtyzF9leLfHbuEk=";
+        vendorHash = "sha256-AA77HAReND1GuLhF9pBnVHx6mU/1nLAU4lTMUOUqTT0=";
 
         meta = {
           license = pkgs.lib.licenses.mit;

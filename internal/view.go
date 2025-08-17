@@ -21,8 +21,13 @@ func (m Model) View() string {
 	}
 	bodyHeight := m.height - (1 + lipgloss.Height(cardHeaders) + attachmentHeight)
 	cardBody := m.renderBody(bodyHeight)
-	// NOTE: cardAttachments already includes the \n if there are attchments
-	return fmt.Sprint(cardHeaders, "\n", cardBody, "\n", cardAttachments, m.help.View(m.keys))
+
+	bottom_line := m.help.View(m.keys)
+	if m.inRemoveAttachment {
+		bottom_line = "remove attachment"
+	}
+	// NOTE: cardAttachments already includes the \n if there are attachments
+	return fmt.Sprint(cardHeaders, "\n", cardBody, "\n", cardAttachments, bottom_line)
 }
 
 var borderColor = lipgloss.Color("4")
@@ -67,13 +72,18 @@ func (m *Model) renderHeaders() string {
 func (m *Model) renderAttachments() string {
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder(), false, true, true, true).
-		BorderForeground(borderColor).
+		BorderForeground(borderColor). // TODO: highlight border color
 		Padding(0, 1).
 		Width(m.width - 2)
 
 	lines := []string{}
-	for _, a := range m.email.Attachments {
-		lines = append(lines, fmt.Sprint("- ", a.Filename, " ", a.ContentType))
+	for i, a := range m.email.Attachments {
+		prefix := "- "
+		if m.inRemoveAttachment {
+			rune := attachmentIndexToRune(i)
+			prefix = fmt.Sprintf("[%c] ", rune)
+		}
+		lines = append(lines, fmt.Sprint(prefix, a.Filename, " ", a.ContentType))
 	}
 
 	return style.Render(strings.Join(lines, "\n"))
@@ -91,7 +101,7 @@ func (m *Model) renderBody(height int) string {
 	return style.Height(height).Render(m.bodyViewport.View())
 }
 
-func RenderMarkdown(width int, markdown string) (string, error) {
+func renderMarkdown(width int, markdown string) (string, error) {
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithWordWrap(width),
 		glamour.WithEmoji(),
@@ -301,3 +311,15 @@ var markdownStyleJson = `{
   "html_block": {},
   "html_span": {}
 }`
+
+func attachmentIndexToRune(index int) rune {
+	if index >= 0 && index <= 9 {
+		return rune('0' + ((index + 1) % 10))
+	}
+
+	if index >= 10 && index <= 35 {
+		return rune('a' + index - 10)
+	}
+
+	return 'ẞ'
+}

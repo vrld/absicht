@@ -10,12 +10,12 @@ import (
 )
 
 type KeyMap struct {
-	Edit   key.Binding
-	Attach key.Binding
-	Send   key.Binding
-	Save   key.Binding
-	Quit   key.Binding
-	// TODO: bindings to manage attachments
+	Edit             key.Binding
+	Attach           key.Binding
+	Send             key.Binding
+	Save             key.Binding
+	Quit             key.Binding
+	RemoveAttachment key.Binding
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -24,29 +24,32 @@ func (k KeyMap) ShortHelp() []key.Binding {
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Edit, k.Attach},
+		{k.Edit, k.Attach, k.RemoveAttachment},
 		{k.Send, k.Save, k.Quit},
 	}
 }
 
 type Model struct {
-	width, height int
-	keys          KeyMap
-	help          help.Model
-	email         *email.Email
-	bodyViewport  viewport.Model
+	width, height      int
+	keys               KeyMap
+	help               help.Model
+	email              *email.Email
+	bodyViewport       viewport.Model
+	inRemoveAttachment bool
 }
 
 func InitialModel() Model {
 	model := Model{
 		keys: KeyMap{
-			Edit:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
-			Attach: key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "attach")),
-			Send:   key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "send")),
-			Save:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "save")),
-			Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+			Edit:             key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
+			Attach:           key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "attach")),
+			Send:             key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "send")),
+			Save:             key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "save")),
+			Quit:             key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+			RemoveAttachment: key.NewBinding(key.WithKeys("r")),
 		},
-		email: email.NewEmail(),
+		email:              email.NewEmail(),
+		inRemoveAttachment: false,
 	}
 
 	model.setDimensions(1, 1)
@@ -68,7 +71,7 @@ func (m *Model) ReadEmail(reader io.Reader) error {
 
 func (m *Model) UpdateEmailDisplay() {
 	emailText := string(m.email.Text)
-	rendered, err := RenderMarkdown(m.width, emailText)
+	rendered, err := renderMarkdown(m.width, emailText)
 	if err == nil {
 		m.bodyViewport.SetContent(rendered)
 	} else {
@@ -77,10 +80,10 @@ func (m *Model) UpdateEmailDisplay() {
 }
 
 func (m *Model) setDimensions(width, height int) {
-		m.width = width
-		m.height = height
-		m.help.Width = width
+	m.width = width
+	m.height = height
+	m.help.Width = width
 
-		m.bodyViewport.Width = width
-		m.bodyViewport.Height = height
+	m.bodyViewport.Width = width
+	m.bodyViewport.Height = height
 }

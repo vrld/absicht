@@ -7,6 +7,7 @@ import (
 	"net/textproto"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -32,7 +33,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setDimensions(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
-		if cmd := m.handleKeyMessage(msg); cmd != nil {
+		if m.inRemoveAttachment {
+			return m, m.handleRemoveKeyMessage(msg)
+		} else if cmd := m.handleKeyMessage(msg); cmd != nil {
 			return m, cmd
 		}
 
@@ -49,6 +52,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.email.Text = msg.Text
 		m.UpdateEmailDisplay()
 		return m, nil
+
+	case RemoveAttachment:
+		m.email.Attachments = slices.Delete(m.email.Attachments, msg.index, msg.index+1)
+		m.inRemoveAttachment = false
+		return m, nil
 	}
 
 	m.bodyViewport.Update(msg)
@@ -64,7 +72,8 @@ func (m *Model) handleKeyMessage(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, m.keys.Attach):
 		m.attachFile()
 		// TODO event based on outcome of selection
-		return func() tea.Msg { return "redraw" }
+		// return func() tea.Msg { return "redraw" }
+		return nil
 
 	case key.Matches(msg, m.keys.Send):
 		// TODO: call msmtp and quit
@@ -76,6 +85,24 @@ func (m *Model) handleKeyMessage(msg tea.KeyMsg) tea.Cmd {
 
 	case key.Matches(msg, m.keys.Quit):
 		return tea.Quit
+
+	case key.Matches(msg, m.keys.RemoveAttachment) && len(m.email.Attachments) > 0:
+		m.inRemoveAttachment = true
+		return nil
+	}
+
+	return nil
+}
+
+func (m *Model) handleRemoveKeyMessage(msg tea.KeyMsg) tea.Cmd {
+	if msg.Type == tea.KeyEscape {
+		m.inRemoveAttachment = false
+		return nil
+	}
+
+	attachmentIndex := runeToAttachmentIndex(msg)
+	if attachmentIndex >= 0 && attachmentIndex < len(m.email.Attachments) {
+		return RemoveAttachmentCmd(attachmentIndex)
 	}
 
 	return nil
@@ -201,18 +228,6 @@ func writeEmailToFile(file *os.File, email *email.Email) (err error) {
 	return err
 }
 
-type EditEmail struct{}
-
-type UpdateEmail struct {
-	From    string
-	To      []string
-	Cc      []string
-	Bcc     []string
-	Subject string
-	Headers textproto.MIMEHeader
-	Text    []byte
-}
-
 func markdownToHtml(markdown []byte) ([]byte, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM, extension.Footnote),
@@ -225,4 +240,39 @@ func markdownToHtml(markdown []byte) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+type EditEmail struct{}
+
+type UpdateEmail struct {
+	From    string
+	To      []string
+	Cc      []string
+	Bcc     []string
+	Subject string
+	Headers textproto.MIMEHeader
+	Text    []byte
+}
+
+type RemoveAttachment struct{ index int }
+
+func RemoveAttachmentCmd(index int) tea.Cmd {
+	return func() tea.Msg {
+		return RemoveAttachment{index}
+	}
+}
+
+func runeToAttachmentIndex(msg tea.KeyMsg) int {
+	rune := msg.Runes[0]
+	// 1 -> 0, 2 -> 1, ..., 0 -> 9
+	if rune >= '0' && rune <= '9' {
+		return (int(rune-'0') + 9) % 10
+	}
+
+	// a -> 10, b -> 11, ...
+	if rune >= 'a' && rune <= 'z' {
+		return int(rune-'a') + 10
+	}
+
+	return -1
 }
