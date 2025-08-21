@@ -10,10 +10,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/shlex"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/jordan-wright/email"
 	"github.com/rymdport/portal/filechooser"
+	"github.com/spf13/viper"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/renderer/html"
@@ -71,13 +73,25 @@ func (m *Model) handleKeyMessage(msg tea.KeyMsg) tea.Cmd {
 
 	case key.Matches(msg, m.keys.Attach):
 		m.attachFile()
-		// TODO event based on outcome of selection
-		// return func() tea.Msg { return "redraw" }
 		return nil
 
 	case key.Matches(msg, m.keys.Send):
-		// TODO: call msmtp and quit
-		return nil
+		sendmail, err := shlex.Split(viper.GetString("sendmail"))
+		if err != nil {
+			return func() tea.Msg { return err }
+		}
+
+		if len(sendmail) == 0 {
+			return func() tea.Msg { return fmt.Errorf("No send command given") }
+		}
+
+		cmd := exec.Command(sendmail[0], sendmail[1:]...)
+		mailBytes, err := m.email.Bytes()
+		if err != nil {
+			return func() tea.Msg { return err }
+		}
+		cmd.Stdin = bytes.NewReader(mailBytes)
+		return tea.ExecProcess(cmd, func(err error) tea.Msg { return err })
 
 	case key.Matches(msg, m.keys.Save):
 		m.saveToFile()
