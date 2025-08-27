@@ -14,9 +14,7 @@
         pname = "absicht";
         version = "0.0.1";
         src = ./.;
-        # vendorHash = null;
-        # vendorHash = pkgs.lib.fakeHash;
-        vendorHash = "sha256-AA77HAReND1GuLhF9pBnVHx6mU/1nLAU4lTMUOUqTT0=";
+        vendorHash = "sha256-a5BQFlpg6G0Cjd8kj0KrE7F6r4tE/wAHBVTQXvrWbg0=";
 
         meta = {
           license = pkgs.lib.licenses.mit;
@@ -39,7 +37,6 @@
           go-tools         # linter (`staticcheck`)
           delve            # debugger
           gdlv             # GUI for delve
-          # golangci-lint    # linter (`golangci-lint run`), formatter
         ];
 
         shellHook = /*bash*/''
