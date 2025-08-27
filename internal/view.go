@@ -8,6 +8,22 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const borderColorNormal = lipgloss.Color("8")
+const borderColorSelected = lipgloss.Color("4")
+
+var styleHeaderKey = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+var styleHeaderValue = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+
+var styleButton = lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("0")).Padding(0, 1).Bold(true)
+var styleCancelButton = styleButton.Background(lipgloss.Color("9"))
+
+func (m *Model) borderColor(state int) lipgloss.Color {
+	if m.inputState == state {
+		return borderColorSelected
+	}
+	return borderColorNormal
+}
+
 func (m Model) View() string {
 	cardHeaders := m.renderHeaders()
 	var cardAttachments string
@@ -15,90 +31,161 @@ func (m Model) View() string {
 		cardAttachments = m.renderAttachments() + "\n"
 	}
 
-	attachmentHeight := lipgloss.Height(cardAttachments)
-	if len(m.email.Attachments) == 0 {
-		attachmentHeight = 1 // TODO: figure out why this needs to be 1 instead of 0
-	}
-	bodyHeight := m.height - (1 + lipgloss.Height(cardHeaders) + attachmentHeight)
-	cardBody := m.renderBody(bodyHeight)
+	bottom := m.renderBottom()
 
-	bottom_line := m.help.View(m.keys)
-	if m.inRemoveAttachment {
-		bottom_line = "remove attachment"
-	}
+	cardBody := m.renderBody()
+
 	// NOTE: cardAttachments already includes the \n if there are attachments
-	return fmt.Sprint(cardHeaders, "\n", cardBody, "\n", cardAttachments, bottom_line)
+	return fmt.Sprint(cardHeaders, "\n", cardBody, "\n", cardAttachments, bottom)
 }
 
-var borderColor = lipgloss.Color("4")
+func (m *Model) renderHeightHeaders() int {
+	return len(getAllHeaders(m.email)) + 2
+}
 
 func (m *Model) renderHeaders() string {
+	headers := getAllHeaders(m.email)
+	maxHeaderLength := 0
+	for _, h := range headers {
+		maxHeaderLength = max(maxHeaderLength, len(h.key))
+	}
+
+	lines := []string{}
+	for _, header := range headers {
+		lines = append(lines, fmt.Sprint(
+			styleHeaderKey.Width(maxHeaderLength+2).Render(header.key+":"),
+			styleHeaderValue.Render(header.value),
+		))
+	}
+
+	color := borderColorNormal
+
 	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderColor).
+		Border(lipgloss.NormalBorder(), false, true, true, true).
+		BorderForeground(color).
 		Padding(0, 1).
 		Width(m.width - 2)
 
-	lines := []string{
-		fmt.Sprint("From: ", m.email.From),
-		fmt.Sprint("To: ", strings.Join(m.email.To, ", ")),
+	return fmt.Sprint(
+		renderTopLineWithTitle("header", m.width, color),
+		"\n",
+		style.Render(strings.Join(lines, "\n")),
+	)
+}
+
+func (m *Model) renderHeightAttachments() int {
+	count := len(m.email.Attachments)
+	if count == 0 {
+		return 0
 	}
-
-	if cc := strings.Join(m.email.Cc, ", "); cc != "" {
-		lines = append(lines, fmt.Sprint("Cc: ", cc))
-	}
-
-	if bcc := strings.Join(m.email.Bcc, ", "); bcc != "" {
-		lines = append(lines, fmt.Sprint("Bcc: ", bcc))
-	}
-
-	lines = append(lines, fmt.Sprint("Subject: ", m.email.Subject))
-
-	for key, values := range m.email.Headers {
-		switch key {
-		case "Content-Type", "Content-Transfer-Encoding", "Mime-Version", "Message-Id":
-			// skip header
-
-		default:
-			for _, v := range values {
-				lines = append(lines, fmt.Sprintf("%s: %s", key, v))
-			}
-		}
-	}
-
-	return style.Render(strings.Join(lines, "\n"))
+	return count + 2
 }
 
 func (m *Model) renderAttachments() string {
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder(), false, true, true, true).
-		BorderForeground(borderColor). // TODO: highlight border color
-		Padding(0, 1).
-		Width(m.width - 2)
-
 	lines := []string{}
 	for i, a := range m.email.Attachments {
 		prefix := "- "
-		if m.inRemoveAttachment {
+		if m.inputState == stateRemoveAttachment {
 			rune := attachmentIndexToRune(i)
 			prefix = fmt.Sprintf("[%c] ", rune)
 		}
 		lines = append(lines, fmt.Sprint(prefix, a.Filename, " ", a.ContentType))
 	}
 
-	return style.Render(strings.Join(lines, "\n"))
-}
+	color := m.borderColor(stateRemoveAttachment)
 
-func (m *Model) renderBody(height int) string {
 	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder(), false, true, true, true).
-		BorderForeground(borderColor).
+		Border(lipgloss.NormalBorder(), false, true, true, true).
+		BorderForeground(color).
 		Padding(0, 1).
 		Width(m.width - 2)
 
-	m.bodyViewport.Height = height
+	return fmt.Sprint(
+		renderTopLineWithTitle("attachments", m.width, color),
+		"\n",
+		style.Render(strings.Join(lines, "\n")),
+	)
+}
 
-	return style.Height(height).Render(m.bodyViewport.View())
+func (m *Model) renderHeightBottom() int {
+	return 1
+}
+
+func (m *Model) renderBottom() string {
+	if m.inputState == stateRemoveAttachment {
+		return m.renderButtons(
+			[]string{styleButton.Render("select attachment to delete")},
+			[]string{styleCancelButton.Render("<esc> to cancel")},
+		)
+	}
+	return m.renderButtons(
+		[]string{
+			styleButton.Render("[e]dit"),
+			styleButton.Render("[a]ttach"),
+			styleButton.Render("[r]emove attachment"),
+			styleButton.Render("[s]ave"),
+		},
+		[]string{
+			styleButton.Render("send (y)"),
+			styleCancelButton.Render("[q]uit"),
+		},
+	)
+}
+
+func (m *Model) renderButtons(left, right []string) string {
+	leftJoined := strings.Join(left, " ")
+	rightJoined := strings.Join(right, " ")
+
+	spacer := ""
+	spacerWidth := m.width - (lipgloss.Width(leftJoined) + lipgloss.Width(rightJoined)) - 2
+	if spacerWidth > 0 {
+		spacer = strings.Repeat(" ", spacerWidth)
+	}
+
+	return fmt.Sprint(" ", leftJoined, spacer, rightJoined)
+}
+
+func (m *Model) renderBody() string {
+	color := m.borderColor(stateReadBody)
+
+	style := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, true, true, true).
+		BorderForeground(lipgloss.Color(color)).
+		Padding(0, 1).
+		Width(m.width - 2)
+
+	return fmt.Sprint(
+		renderTopLineWithTitle("body", m.width, lipgloss.Color(color)),
+		"\n",
+		style.Height(m.bodyViewport.Height-1).Render(m.bodyViewport.View()),
+	)
+}
+
+func renderTopLineWithTitle(title string, width int, color lipgloss.Color) string {
+	borderStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	switch width {
+	case 0:
+		return ""
+	case 1:
+		return borderStyle.Render("╌")
+	case 2:
+		return borderStyle.Render("├┤")
+	}
+
+	titleWidth := lipgloss.Width(title) + 6
+	if width < titleWidth {
+		return borderStyle.Render(fmt.Sprint("┌", strings.Repeat("─", width-2), "┐"))
+	}
+
+	return borderStyle.Render(
+		fmt.Sprint(
+			"┌",
+			strings.Repeat("─", width-titleWidth),
+			"─🮤",
+			title,
+			"🮥─┐",
+		),
+	)
 }
 
 func renderMarkdown(width int, markdown string) (string, error) {
@@ -112,12 +199,7 @@ func renderMarkdown(width int, markdown string) (string, error) {
 		return "", err
 	}
 
-	result, err := renderer.Render(markdown)
-	if err != nil {
-		return "", err
-	}
-
-	return result, nil
+	return renderer.Render(markdown)
 }
 
 var markdownStyleJson = `{

@@ -10,9 +10,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/shlex"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/shlex"
 	"github.com/jordan-wright/email"
 	"github.com/rymdport/portal/filechooser"
 	"github.com/spf13/viper"
@@ -35,10 +35,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setDimensions(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
-		if m.inRemoveAttachment {
+		switch m.inputState {
+		case stateReadBody:
+			return m, m.handleBodyKeyMessage(msg)
+
+		case stateRemoveAttachment:
 			return m, m.handleRemoveKeyMessage(msg)
-		} else if cmd := m.handleKeyMessage(msg); cmd != nil {
-			return m, cmd
 		}
 
 	case EditEmail:
@@ -53,56 +55,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.email.Headers = msg.Headers
 		m.email.Text = msg.Text
 		m.UpdateEmailDisplay()
-		return m, nil
 
 	case RemoveAttachment:
 		m.email.Attachments = slices.Delete(m.email.Attachments, msg.index, msg.index+1)
-		m.inRemoveAttachment = false
-		return m, nil
+		m.setViewportHeight()
+		m.inputState = stateReadBody
 	}
 
-	m.bodyViewport.Update(msg)
+	var cmd tea.Cmd
+	m.bodyViewport, cmd = m.bodyViewport.Update(msg)
 
-	return m, nil
+	return m, cmd
 }
 
-func (m *Model) handleKeyMessage(msg tea.KeyMsg) tea.Cmd {
+func send(value tea.Msg) tea.Cmd {
+	return func() tea.Msg { return value }
+}
+
+func (m *Model) handleBodyKeyMessage(msg tea.KeyMsg) tea.Cmd {
 	switch {
 	case key.Matches(msg, m.keys.Edit):
-		return func() tea.Msg { return EditEmail{} }
+		return send(EditEmail{})
 
 	case key.Matches(msg, m.keys.Attach):
 		m.attachFile()
-		return nil
 
 	case key.Matches(msg, m.keys.Send):
 		sendmail, err := shlex.Split(viper.GetString("sendmail"))
 		if err != nil {
-			return func() tea.Msg { return err }
+			return send(err)
 		}
 
 		if len(sendmail) == 0 {
-			return func() tea.Msg { return fmt.Errorf("No send command given") }
+			return send(fmt.Errorf("No send command given"))
 		}
 
 		cmd := exec.Command(sendmail[0], sendmail[1:]...)
 		mailBytes, err := m.email.Bytes()
 		if err != nil {
-			return func() tea.Msg { return err }
+			return send(err)
 		}
 		cmd.Stdin = bytes.NewReader(mailBytes)
 		return tea.ExecProcess(cmd, func(err error) tea.Msg { return err })
 
 	case key.Matches(msg, m.keys.Save):
 		m.saveToFile()
-		return nil
 
 	case key.Matches(msg, m.keys.Quit):
 		return tea.Quit
 
 	case key.Matches(msg, m.keys.RemoveAttachment) && len(m.email.Attachments) > 0:
-		m.inRemoveAttachment = true
-		return nil
+		m.inputState = stateRemoveAttachment
+
+	default:
+		var cmd tea.Cmd
+		m.bodyViewport, cmd = m.bodyViewport.Update(msg)
+		return cmd
 	}
 
 	return nil
@@ -110,7 +118,7 @@ func (m *Model) handleKeyMessage(msg tea.KeyMsg) tea.Cmd {
 
 func (m *Model) handleRemoveKeyMessage(msg tea.KeyMsg) tea.Cmd {
 	if msg.Type == tea.KeyEscape {
-		m.inRemoveAttachment = false
+		m.inputState = stateReadBody
 		return nil
 	}
 
@@ -208,32 +216,11 @@ func (m *Model) saveToFile() {
 }
 
 func writeEmailToFile(file *os.File, email *email.Email) (err error) {
-	canonicalHeaders := []struct{ key, value string }{
-		{"From", email.From},
-		{"To", strings.Join(email.To, ", ")},
-		{"Cc", strings.Join(email.Cc, ", ")},
-		{"Bcc", strings.Join(email.Bcc, ", ")},
-		{"Subject", email.Subject},
-	}
-	for _, h := range canonicalHeaders {
+	headers := getAllHeaders(email)
+	for _, h := range headers {
 		_, err = fmt.Fprintf(file, "%s: %s\n", h.key, h.value)
 		if err != nil {
 			return err
-		}
-	}
-
-	for key, values := range email.Headers {
-		switch key {
-		case "Content-Type", "Content-Transfer-Encoding", "Mime-Version", "Message-Id":
-			// skip header
-
-		default:
-			for _, v := range values {
-				_, err = fmt.Fprintf(file, "%s: %s\n", key, v)
-				if err != nil {
-					return err
-				}
-			}
 		}
 	}
 
