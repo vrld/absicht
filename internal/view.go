@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	zone "github.com/lrstanley/bubblezone"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -36,7 +37,7 @@ func (m Model) View() string {
 	cardBody := m.renderBody()
 
 	// NOTE: cardAttachments already includes the \n if there are attachments
-	return fmt.Sprint(cardHeaders, "\n", cardBody, "\n", cardAttachments, bottom)
+	return zone.Scan(fmt.Sprint(cardHeaders, "\n", cardBody, "\n", cardAttachments, bottom))
 }
 
 func (m *Model) renderHeightHeaders() int {
@@ -78,18 +79,42 @@ func (m *Model) renderHeightAttachments() int {
 	if count == 0 {
 		return 0
 	}
-	return count + 2
+
+	padding := 2
+	if m.inputState == stateRemoveAttachment {
+		padding += len(m.email.Attachments) - 1
+	}
+
+	return count + padding
+}
+
+func humanReadableFileSize(size int) string {
+	if size > 1024 * 1024 {
+		return fmt.Sprintf("%.2f MB", float64(size) / 1024. / 1024.)
+	} else if size > 1024 {
+		return fmt.Sprintf("%.2f KB", float64(size) / 1024.)
+	} else {
+		return fmt.Sprintf("%d B", size)
+	}
 }
 
 func (m *Model) renderAttachments() string {
 	lines := []string{}
 	for i, a := range m.email.Attachments {
-		prefix := "- "
+		line := ""
 		if m.inputState == stateRemoveAttachment {
-			rune := attachmentIndexToRune(i)
-			prefix = fmt.Sprintf("[%c] ", rune)
+			newline := ""
+			if i > 0 { newline = "\n" }
+			selectionRune := attachmentIndexToRune(i)
+			prefix := fmt.Sprintf("⟨%c⟩", selectionRune)
+			line = fmt.Sprint(newline, zone.Mark(
+				fmt.Sprintf("attachment:%c", selectionRune),
+				styleButton.Render(prefix, a.Filename, a.ContentType, humanReadableFileSize(len(a.Content))),
+			))
+		} else {
+			line = fmt.Sprint("• ", a.Filename, " ", a.ContentType, " ", humanReadableFileSize(len(a.Content)))
 		}
-		lines = append(lines, fmt.Sprint(prefix, a.Filename, " ", a.ContentType))
+		lines = append(lines, line)
 	}
 
 	color := m.borderColor(stateRemoveAttachment)
@@ -115,19 +140,21 @@ func (m *Model) renderBottom() string {
 	if m.inputState == stateRemoveAttachment {
 		return m.renderButtons(
 			[]string{styleButton.Render("select attachment to delete")},
-			[]string{styleCancelButton.Render("<esc> to cancel")},
+			[]string{
+				zone.Mark("cancelRemove", styleCancelButton.Render("cancel <esc>")),
+			},
 		)
 	}
 	return m.renderButtons(
 		[]string{
-			styleButton.Render("[e]dit"),
-			styleButton.Render("[a]ttach"),
-			styleButton.Render("[r]emove attachment"),
-			styleButton.Render("[s]ave"),
+			zone.Mark("edit", styleButton.Render("[e]dit")),
+			zone.Mark("attach", styleButton.Render("[a]ttach")),
+			zone.Mark("remove", styleButton.Render("[r]emove attachment")),
+			zone.Mark("save", styleButton.Render("[s]ave")),
 		},
 		[]string{
-			styleButton.Render("send (y)"),
-			styleCancelButton.Render("[q]uit"),
+			zone.Mark("send", styleButton.Render("send (y)")),
+			zone.Mark("quit", styleCancelButton.Render("[q]uit")),
 		},
 	)
 }

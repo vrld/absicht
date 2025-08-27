@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/shlex"
 	"github.com/jordan-wright/email"
+	zone "github.com/lrstanley/bubblezone"
 	"github.com/rymdport/portal/filechooser"
 	"github.com/spf13/viper"
 	"github.com/yuin/goldmark"
@@ -43,6 +44,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.handleRemoveKeyMessage(msg)
 		}
 
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			switch m.inputState {
+			case stateReadBody:
+				if zone.Get("edit").InBounds(msg) {
+					return m, send(EditEmail{})
+				} else if zone.Get("attach").InBounds(msg) {
+					m.attachFile()
+				} else if zone.Get("remove").InBounds(msg) && len(m.email.Attachments) > 0 {
+					m.setInputState(stateRemoveAttachment)
+				} else if zone.Get("save").InBounds(msg) {
+					m.saveToFile()
+				} else if zone.Get("send").InBounds(msg) {
+					return m, m.sendEmail()
+				} else if zone.Get("quit").InBounds(msg) {
+					return m, tea.Quit
+				}
+
+			case stateRemoveAttachment:
+				if zone.Get("cancelRemove").InBounds(msg) {
+					m.setInputState(stateReadBody)
+				}
+				for i := range m.email.Attachments {
+					zoneName := fmt.Sprintf("attachment:%c", attachmentIndexToRune(i))
+					if zone.Get(zoneName).InBounds(msg) {
+						return m, RemoveAttachmentCmd(i)
+					}
+				}
+			}
+			return m, nil
+		}
+
 	case EditEmail:
 		return m, m.editEmail()
 
@@ -59,7 +92,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case RemoveAttachment:
 		m.email.Attachments = slices.Delete(m.email.Attachments, msg.index, msg.index+1)
 		m.setViewportHeight()
-		m.inputState = stateReadBody
+		m.setInputState(stateReadBody)
 	}
 
 	var cmd tea.Cmd
@@ -81,22 +114,7 @@ func (m *Model) handleBodyKeyMessage(msg tea.KeyMsg) tea.Cmd {
 		m.attachFile()
 
 	case key.Matches(msg, m.keys.Send):
-		sendmail, err := shlex.Split(viper.GetString("sendmail"))
-		if err != nil {
-			return send(err)
-		}
-
-		if len(sendmail) == 0 {
-			return send(fmt.Errorf("No send command given"))
-		}
-
-		cmd := exec.Command(sendmail[0], sendmail[1:]...)
-		mailBytes, err := m.email.Bytes()
-		if err != nil {
-			return send(err)
-		}
-		cmd.Stdin = bytes.NewReader(mailBytes)
-		return tea.ExecProcess(cmd, func(err error) tea.Msg { return err })
+		return m.sendEmail()
 
 	case key.Matches(msg, m.keys.Save):
 		m.saveToFile()
@@ -105,7 +123,7 @@ func (m *Model) handleBodyKeyMessage(msg tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 
 	case key.Matches(msg, m.keys.RemoveAttachment) && len(m.email.Attachments) > 0:
-		m.inputState = stateRemoveAttachment
+		m.setInputState(stateRemoveAttachment)
 
 	default:
 		var cmd tea.Cmd
@@ -117,8 +135,8 @@ func (m *Model) handleBodyKeyMessage(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) handleRemoveKeyMessage(msg tea.KeyMsg) tea.Cmd {
-	if msg.Type == tea.KeyEscape {
-		m.inputState = stateReadBody
+	if key.Matches(msg, m.keys.StopRemoveAttachment) {
+		m.setInputState(stateReadBody)
 		return nil
 	}
 
@@ -140,6 +158,8 @@ func (m *Model) attachFile() {
 	for _, filename := range files {
 		m.email.AttachFile(strings.TrimPrefix(filename, "file://"))
 	}
+
+	m.setViewportHeight()
 }
 
 func (m *Model) editEmail() tea.Cmd {
@@ -229,6 +249,25 @@ func writeEmailToFile(file *os.File, email *email.Email) (err error) {
 	return err
 }
 
+func (m *Model) sendEmail() tea.Cmd {
+	sendmail, err := shlex.Split(viper.GetString("sendmail"))
+	if err != nil {
+		return send(err)
+	}
+
+	if len(sendmail) == 0 {
+		return send(fmt.Errorf("No send command given"))
+	}
+
+	cmd := exec.Command(sendmail[0], sendmail[1:]...)
+	mailBytes, err := m.email.Bytes()
+	if err != nil {
+		return send(err)
+	}
+	cmd.Stdin = bytes.NewReader(mailBytes)
+	return tea.ExecProcess(cmd, func(err error) tea.Msg { return err })
+}
+
 func markdownToHtml(markdown []byte) ([]byte, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(extension.GFM, extension.Footnote),
@@ -264,6 +303,10 @@ func RemoveAttachmentCmd(index int) tea.Cmd {
 }
 
 func runeToAttachmentIndex(msg tea.KeyMsg) int {
+	if len(msg.Runes) == 0 {
+		return -1
+	}
+
 	rune := msg.Runes[0]
 	// 1 -> 0, 2 -> 1, ..., 0 -> 9
 	if rune >= '0' && rune <= '9' {

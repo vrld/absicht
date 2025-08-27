@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	zone "github.com/lrstanley/bubblezone"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -31,11 +32,14 @@ Edit the text body with your $EDITOR. Manage attachments.
 Save emails and send them through msmtp.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
+		zone.NewGlobal()
+		defer zone.Close()
+
 		model := internal.InitialModel()
 
 		err := readEmail(&model)
 
-		p := tea.NewProgram(model, tea.WithAltScreen())
+		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 		if err != nil {
 			go p.Send(err)

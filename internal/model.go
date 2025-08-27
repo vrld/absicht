@@ -10,18 +10,19 @@ import (
 )
 
 type KeyMap struct {
-	Edit             key.Binding
-	Attach           key.Binding
-	Send             key.Binding
-	Save             key.Binding
-	Quit             key.Binding
-	RemoveAttachment key.Binding
-	ScrollUp         key.Binding
-	ScrollDown       key.Binding
-	ScrollLeft       key.Binding
-	ScrollRight      key.Binding
-	HalfPageUp       key.Binding
-	HalfPageDown     key.Binding
+	Edit                 key.Binding
+	Attach               key.Binding
+	Send                 key.Binding
+	Save                 key.Binding
+	Quit                 key.Binding
+	RemoveAttachment     key.Binding
+	StopRemoveAttachment key.Binding
+	ScrollUp             key.Binding
+	ScrollDown           key.Binding
+	ScrollLeft           key.Binding
+	ScrollRight          key.Binding
+	HalfPageUp           key.Binding
+	HalfPageDown         key.Binding
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -52,18 +53,19 @@ type Model struct {
 func InitialModel() Model {
 	model := Model{
 		keys: KeyMap{
-			Edit:             key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit email")),
-			Attach:           key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "attach file")),
-			Send:             key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "send")),
-			Save:             key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "save")),
-			Quit:             key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-			RemoveAttachment: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "remove attachment")),
-			ScrollUp:         key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "scroll up")),
-			ScrollDown:       key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "scroll down")),
-			ScrollLeft:       key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "scroll left")),
-			ScrollRight:      key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "scroll right")),
-			HalfPageUp:       key.NewBinding(key.WithKeys("u", "ctrl+u"), key.WithHelp("u", "½ page up")),
-			HalfPageDown:     key.NewBinding(key.WithKeys("d", "ctrl+d"), key.WithHelp("d", "½ page down")),
+			Edit:                 key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit email")),
+			Attach:               key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "attach file")),
+			Send:                 key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "send")),
+			Save:                 key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "save")),
+			Quit:                 key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+			RemoveAttachment:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "remove attachment")),
+			StopRemoveAttachment: key.NewBinding(key.WithKeys("escape", "q"), key.WithHelp("escape/q", "cancel remove attachment")),
+			ScrollUp:             key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "scroll up")),
+			ScrollDown:           key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "scroll down")),
+			ScrollLeft:           key.NewBinding(key.WithKeys("left", "h"), key.WithHelp("←/h", "scroll left")),
+			ScrollRight:          key.NewBinding(key.WithKeys("right", "l"), key.WithHelp("→/l", "scroll right")),
+			HalfPageUp:           key.NewBinding(key.WithKeys("u", "ctrl+u"), key.WithHelp("u", "½ page up")),
+			HalfPageDown:         key.NewBinding(key.WithKeys("d", "ctrl+d"), key.WithHelp("d", "½ page down")),
 		},
 		email:      email.NewEmail(),
 		inputState: stateReadBody,
@@ -88,7 +90,7 @@ func (m *Model) ReadEmail(reader io.Reader) error {
 
 func (m *Model) UpdateEmailDisplay() {
 	emailText := string(m.email.Text)
-	rendered, err := renderMarkdown(m.width, emailText)
+	rendered, err := renderMarkdown(m.width-2, emailText)
 
 	if err == nil {
 		m.bodyViewport.SetContent(rendered)
@@ -104,10 +106,15 @@ func (m *Model) setDimensions(width, height int) {
 	m.height = height
 	m.help.Width = width
 
-	m.bodyViewport.Width = width
+	m.bodyViewport.Width = width - 2
 	m.setViewportHeight()
 }
 
 func (m *Model) setViewportHeight() {
 	m.bodyViewport.Height = m.height - m.renderHeightAttachments() - m.renderHeightHeaders() - m.renderHeightBottom() - 2
+}
+
+func (m *Model) setInputState(state int) {
+	m.inputState = state
+	m.setViewportHeight()
 }
